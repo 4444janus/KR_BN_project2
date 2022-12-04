@@ -2,7 +2,7 @@ from typing import Union
 from BayesNet import BayesNet
 import matplotlib.pyplot as plt
 import networkx as nx
-
+import pandas as pd
 class BNReasoner:
     def __init__(self, net: Union[str, BayesNet]):
         """
@@ -16,26 +16,67 @@ class BNReasoner:
         else:
             self.bn = net
 
-    def network_pruning(self, instantiation, cpt):
+
+    def edge_pruning(self, e):
+        # print("Edge pruning:")
+
+        for var, val in e.items():
+            # print(f"Var: {var}")
+            cpt = self.bn.get_cpt(var)
+            cpt_update = self.bn.get_compatible_instantiations_table(pd.Series({var: val}), cpt)
+            # print(cpt_update)
+            # print(cpt)
+            self.bn.update_cpt(var, cpt_update)
+            # print(len(e.items()))
+            # print(e.values(), e.keys())
+            print("Prune all edges from", var, "to all other nodes")
+            if not self.bn.get_children(var):
+                pass
+            else:
+                for child in self.bn.get_children(var):
+                    # prune edge between evident node and its child
+                    self.bn.del_edge((var, child))
+
+                    # update CPT
+                    cpt = self.bn.get_cpt(child)
+                    cpt_update = self.bn.get_compatible_instantiations_table(pd.Series({var: val}), cpt)
+                    self.bn.update_cpt(child, cpt_update)
+
+
+    def node_pruning(self, Q, e):
+        # node pruning
+        # print("Node pruning:")
+        pruning = True
+        while pruning:
+            pruning = False
+            for variable in self.bn.get_all_variables():
+                # print("Variable:", variable)
+
+            # remove leaf node when it is not influencing Q or e
+                if not self.bn.get_children(variable):
+                    print(set(Q))
+                    print(variable)
+                    if variable not in set(Q) and variable not in set(e.keys()):
+                        # delete leaf node and check if new leaf nodes are created
+                        print("Delete leaf node", variable)
+                        self.bn.del_var(variable)
+                        pruning = True
+    def network_pruning(self, Q: list, e: dict) -> None:
         """
         Given a set of query variables Q and evidence e, node- and edge-prunes the Bayesian network so that queries of
         the form P(Q|E) can still be correctly calculated.
-
-        :param instantiation: a series of assignments as tuples. E.g.: pd.Series({"A": True, "B": False})
-        :param cpt: cpt to be filtered
-        :return: node- and edge-pruned Bayesain network
+        :param Q: list of query variables
+        :param e: a dictionary of evidence variables with their respective values
+        :return: node- and edge-pruned Bayesian network
         """
+        self.edge_pruning(e)
+        #if evidence is given, prune the nodes
+        if e:
+            self.node_pruning(Q, e)
 
-        # Creates and returns a new factor in which all probabilities which are incompatible with the instantiation
-        # passed to the method to 0.
-        self.new_cpt = self.bn.reduce_factor(instantiation, cpt)
 
-        ## Get all the entries of a CPT which are compatible with the instantiation
-        # compatible_instantiations_table = get_compatible_instantiations_table(instantiation, cpt)
 
-        return self.new_cpt
-
-    def d_Seperation(self, X, Y, Z):
+    def d_Seperation(self, X, Y, Z) -> bool:
         """
         Given three sets of variables X, Y, and Z, determines whether X is d-separated of Y given Z.
 
@@ -228,27 +269,27 @@ def test_BN(filename):
     # Get the structure of the BN
     structure = org_BayesNet_.structure
     print(f'structure: {structure}')
-
+    #
     # Get a list of all variables in the BN
     all_variables = org_BayesNet_.get_all_variables()
     print(f'all_variables: {all_variables}')
-
+    #
     # Get the interaction graph
     interaction_graph = org_BayesNet_.get_interaction_graph()
     print(f'interaction_graph: {interaction_graph}')
-
-    ## Get a figure of the structure of the BN
-    # drawed_structure = org_BayesNet_.draw_structure()
-    # print(f'drawed_structure: {drawed_structure}')
     #
-    ## Get the conditional probability tables of all the variables in the BN
+    # Get a figure of the structure of the BN
+    drawed_structure = org_BayesNet_.draw_structure()
+    print(f'drawed_structure: {drawed_structure}')
+    #
+    # # Get the conditional probability tables of all the variables in the BN
     # all_cpts = org_BayesNet_.get_all_cpts()
     # print(f'all_cpts: {all_cpts}')
     #
     # # Get the conditional probability table of the variable 'dog-out' in the BN
     # cpt_dog_out = org_BayesNet_.get_cpt('dog-out')
     # print(f'cpt_dog_out: \n {cpt_dog_out}')
-    #
+
     # # Sum-out the variable 'family-out' of the cdt of the variable 'dog-out' in the BN
     # sum_out_family_out = BNReasoner_.SumOutVar('family-out', cpt_dog_out, all_variables)
     # print(sum_out_family_out)
@@ -256,15 +297,21 @@ def test_BN(filename):
     # # Maximize-out the variable 'max-out' of the cdt of the variable 'dog-out' in the BN
     # max_out_family_out = BNReasoner_.MaxOutVar('family-out', cpt_dog_out, all_variables)
     # print(max_out_family_out)
+    #
+    # # # Get the elimination order of the variables in the BN
+    # order = BNReasoner_.EliminationOrder(heuristic = "MinDegree")
+    # print(order)
 
-    # # Get the elimination order of the variables in the BN
-    order = BNReasoner_.EliminationOrder(heuristic = "MinDegree")
-    print(order)
-
-
-    # pruned_BayesNet_ = BNReasoner_.network_pruning({"family_out": True, "bowel-problem": False}, cpt_dog_out)
+    # Q = ['Winter?', 'Rain?', 'Sprinkler?', 'WetGrass?', 'Slippery?']
+    Q = ['Wet Grass?']
+    e = {"Rain?": False, "Winter?": True}
+    pruned_BayesNet_ = BNReasoner_.network_pruning(Q, e)
     # print(pruned_BayesNet_)
+
+    drawed_structure = org_BayesNet_.draw_structure()
+    print(f'drawed_structure: {drawed_structure}')
 
     return
 
-BN_dog = test_BN('testing/dog_problem.BIFXML')
+# BN_dog = test_BN('testing/dog_problem.BIFXML')
+BN_lecture = test_BN('testing/lecture_example.BIFXML')
