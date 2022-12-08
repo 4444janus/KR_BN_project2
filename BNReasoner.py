@@ -1,8 +1,9 @@
 from typing import Union
 from BayesNet import BayesNet
-import matplotlib.pyplot as plt
 import networkx as nx
 import pandas as pd
+from itertools import combinations
+
 class BNReasoner:
     def __init__(self, net: Union[str, BayesNet]):
         """
@@ -16,8 +17,27 @@ class BNReasoner:
         else:
             self.bn = net
 
+        # Get the structure of the BN
+        self.structure = self.bn.structure
+        print(f'structure: {self.structure}')
 
-    def edge_pruning(self, e):
+        # Get a list of all variables in the BN
+        self.all_variables = self.bn.get_all_variables()
+        print(f'all_variables: {self.all_variables}')
+
+        # Get the interaction graph
+        self.G = self.bn.get_interaction_graph()
+        print(f'interaction_graph: {self.G}')
+
+        # Get a figure of the structure of the BN
+        # self.drawed_structure = self.bn.draw_structure()
+        # print(f'drawed_structure: {self.drawed_structure}')
+
+        # Get the conditional probability tables of all the variables in the BN
+        # self.all_cpts = self.bn.get_all_cpts()
+        # print(f'all_cpts: {self.all_cpts}')
+
+    def EdgePruning(self, e):
         # print("Edge pruning:")
 
         for var, val in e.items():
@@ -42,14 +62,13 @@ class BNReasoner:
                     cpt_update = self.bn.get_compatible_instantiations_table(pd.Series({var: val}), cpt)
                     self.bn.update_cpt(child, cpt_update)
 
-
-    def node_pruning(self, Q, e):
+    def NodePruning(self, Q, e):
         # node pruning
         # print("Node pruning:")
         pruning = True
         while pruning:
             pruning = False
-            for variable in self.bn.get_all_variables():
+            for variable in self.all_variables:
                 # print("Variable:", variable)
 
             # remove leaf node when it is not influencing Q or e
@@ -61,7 +80,8 @@ class BNReasoner:
                         print("Delete leaf node", variable)
                         self.bn.del_var(variable)
                         pruning = True
-    def network_pruning(self, Q: list, e: dict) -> None:
+
+    def NetworkPruning(self, Q: list, e: dict) -> None:
         """
         Given a set of query variables Q and evidence e, node- and edge-prunes the Bayesian network so that queries of
         the form P(Q|E) can still be correctly calculated.
@@ -69,12 +89,10 @@ class BNReasoner:
         :param e: a dictionary of evidence variables with their respective values
         :return: node- and edge-pruned Bayesian network
         """
-        self.edge_pruning(e)
+        self.EdgePruning(e)
         #if evidence is given, prune the nodes
         if e:
-            self.node_pruning(Q, e)
-
-
+            self.NodePruning(Q, e)
 
     def d_Seperation(self, X, Y, Z) -> bool:
         """
@@ -85,7 +103,13 @@ class BNReasoner:
         :param Z: set of variables Z
         :return: True/False
         """
-        return
+        if nx.is_directed_acyclic_graph(self.G) == False:
+            print("The test only works on DAG's.")
+            return
+
+        else:
+            d_seperated = nx.d_separated(self.G, X, Y, Z)
+            return d_seperated
 
     def Independence(self):
         """
@@ -98,7 +122,7 @@ class BNReasoner:
         """
         return
 
-    def SumOutVar(self, X, cpt, all_variables):
+    def SumOutVar(self, X, cpt):
         """
         Given a factor and a variable X, computes the CPT in which X is summed-out.
 
@@ -106,19 +130,24 @@ class BNReasoner:
         :param cpt: cpt to be filtered
         :return: True/False
         """
-        self.new_cpt = cpt.copy()
+        if X not in cpt.columns:
+            return f"The variable '{X}' is not in the cpt and can therefor not be summed-out."
 
-        # Delete the column of the variable X that is summed out
-        del self.new_cpt[X]
+        else:
+            self.new_cpt = cpt.copy()
 
-        # Get a list of all variables in the cpt
-        self.variables_in_cpt = [value for value in list(self.new_cpt.columns) if value in all_variables]
+            # Delete the column of the variable X that is summed out
+            del self.new_cpt[X]
 
-        # Sum out
-        self.new_cpt = self.new_cpt.groupby(self.variables_in_cpt)['p'].sum().reset_index()
-        return self.new_cpt
+            # Get a list of all variables in the cpt
+            self.variables_in_cpt = [value for value in list(self.new_cpt.columns) if value in self.all_variables]
 
-    def MaxOutVar(self, X, cpt, all_variables):
+            # Sum out
+            self.new_cpt = self.new_cpt.groupby(self.variables_in_cpt)['p'].sum().reset_index()
+
+            return self.new_cpt
+
+    def MaxOutVar(self, X, cpt):
         """
         Given a factor and a variable X, computes the CPT in which X is maximized-out. Also keeps track of which
         instantiation of X led to the maximized value
@@ -127,18 +156,25 @@ class BNReasoner:
         :param cpt: cpt to be filtered
         :return: True/False
         """
-        self.new_cpt = cpt.copy()
+        if X not in cpt.columns:
+            return f"The variable '{X}' is not in the cpt and can therefor not be maximized-out."
 
-        # Delete the column of the variable X that is maximized out
-        del self.new_cpt[X]
+        else:
+            self.new_cpt = cpt.copy()
 
-        # Get a list of all variables in the cpt
-        self.variables_in_cpt = [value for value in list(self.new_cpt.columns) if value in all_variables]
+            # Delete the column of the variable X that is maximized out
+            del self.new_cpt[X]
 
-        # Maximize-out
-        self.new_cpt = self.new_cpt.groupby(self.variables_in_cpt)['p'].max().reset_index()
+            # Get a list of all variables in the cpt
+            self.variables_in_cpt = [value for value in list(self.new_cpt.columns) if value in self.all_variables]
 
-        return self.new_cpt
+            # Maximize-out
+            self.new_cpt = self.new_cpt.groupby(self.variables_in_cpt)['p'].max().reset_index()
+
+            # Extract instantiation of X from original cpt
+            #self.new_cpt[X] = [None, None, None, None]
+
+            return self.new_cpt
 
     def MultFactors(self, f, g):
         """
@@ -150,115 +186,125 @@ class BNReasoner:
         """
         return f*g
 
-    def MinFill(self, nodes, edges):
-        '''
-        Eliminates node first that lead to the fewest fill-in edges
-        :param G: interaction graph
-        :return: list with elimination order
-        '''
-        self.edges = list(edges)
-        self.nodes = list(nodes)
-
-        # Create a list with the elimination order
-        self.elimination_order = []
-
-        return self.elimination_order
-
-    def MinDegree(self, nodes, edges):
-        '''
-        Eliminates nodes with the fewest neighbors first
-
-        :param G: interaction graph
-        :return: list with elimination order
-        '''
-        self.edges = list(edges)
-        self.nodes = list(nodes)
-
-        # Create a list with the elimination order
-        self.elimination_order = []
-
-        if len(nodes) == 0:
-            print('There are no nodes.')
-
-        elif len(nodes) == 1:
-            self.elimination_order.append(node)
-
-        else:
-            # Keep counting the number of neighbours as long as there are edges left
-            while len(self.edges) >= 1:
-
-                if len(self.edges) == 1:
-                    self.elimination_order.append(self.nodes[0])
-                    self.elimination_order.append(self.nodes[1])
-                    return self.elimination_order
-
-                else:
-                    # Count the number of neighbours of every variable
-                    self.neighbour_count = {}
-                    for node in self.nodes:
-                        self.neighbour_count[node] = 0
-
-                    for edge in self.edges:
-                        for node in edge:
-                            self.neighbour_count[node] += 1
-
-                    # Find the node with the minimum amount of neighbours and delete all edges with that node
-                    eliminated_node = min(self.neighbour_count, key=self.neighbour_count.get)
-                    self.elimination_order.append(eliminated_node)
-
-                    # Determine which nodes and edges are left
-                    self.remaining_edges = []
-                    self.remaining_nodes = []
-
-                    for edge in self.edges:
-                        if eliminated_node not in edge:
-                            self.remaining_edges.append(edge)
-                            for node in edge:
-                                self.remaining_nodes.append(node)
-                        else:
-                            continue
-
-                    self.edges = self.remaining_edges
-                    self.nodes = self.remaining_nodes
-
-        return self.elimination_order
-
     def EliminationOrder(self, heuristic):
         """
         Given a set of variables X in the Bayesian network, compute a good ordering for the elimination of X based on
-        the min-degree heuristics and the min-fill heuristics.
-
-        :param X: set of variables X
+        the min-degree heuristics or the min-fill heuristics.
         :param heurstic: min_degree or min_fill
         :return: order for the elimination of X as a list of variables
         """
         # Get the interaction graph of BN
-        self.G = self.bn.get_interaction_graph()
+        self.edges = list(self.G.edges)
+        self.nodes = list(self.G.nodes)
+        self.degree = self.G.degree
 
-        ## Get all nodes of the interaction graph of BN
-        #print("Node set: ", self.G.nodes())
+        # Draw the interaction graph of BN
+        # nx.draw(self.G)
+        # plt.show()
 
-        ## Get all edges of the interaction graph of BN
-        #print("Edge set: ", self.G.edges())
+        # Create a list with the elimination order
+        self.elimination_order = []
 
-        ## Draw the intergraph of BN
-        #nx.draw(self.G)
-        #plt.show()
-
-        # Determine elimination order depending on the heuristic applied
-        if heuristic == "MinFill":
-            elimination_order = self.MinFill(self.G.nodes, self.G.edges)
-            return elimination_order
-
-        elif heuristic == "MinDegree":
-            elimination_order = self.MinDegree(self.G.nodes, self.G.edges)
-            return elimination_order
-
-        else:
-            print("Heuristic has to be either 'MinFill' or 'MinDegree'.")
+        if len(self.nodes) == 0:
+            print('There are no nodes.')
             return
 
-def test_BN(filename):
+        elif len(self.nodes) == 1:
+            print('There is only one node.')
+            self.elimination_order.append(self.nodes[0])
+            return self.elimination_order
+
+        else:
+            # Determine elimination order depending on the heuristic applied
+            if heuristic == "MinFill":
+                self.elimination_order = self.MinFill()
+                print("The elimination order with 'MinFill' heuristic:")
+                return self.elimination_order
+
+            elif heuristic == "MinDegree":
+                self.elimination_order = self.MinDegree()
+                print("The elimination order with 'MinDegree' heuristic:")
+                return self.elimination_order
+
+            else:
+                print("Heuristic has to be either 'MinFill' or 'MinDegree'.")
+                return
+
+    def MinFill(self):
+        '''
+        Elimination ordering by recursively favoring variables with fewer fill-ins required.
+        :return: list of nodes in elimination order in the form ['var1, 'var2', ...]
+        '''
+        # Create a list with the elimination order
+        self.elimination_order = []
+
+        # Keep eliminating nodes as long as there are nodes left
+        while len(self.G.nodes) > 0:
+            self.fill_ins_per_node = {}
+
+            # Get a list of the required fill ins per node if that node is eliminated
+            for node in self.G.nodes:
+                self.fill_ins_per_node[node] = []
+
+                # Get a list of the neighbors per node
+                self.neighbors_per_node = list(self.G.neighbors(node))
+
+                # Get a list of all possible edges between those nodes
+                self.possible_edges = list(combinations(self.neighbors_per_node, 2))
+
+                # If a possible edge is not in the existing edges of the graph, a fill-in is required
+                for possible_edge in self.possible_edges:
+                    if possible_edge in self.G.edges:
+                        continue
+                    else:
+                        self.fill_ins_per_node[node].append(possible_edge)
+
+            # Eliminate the node with the minimum fill-ins required
+            self.eliminated_node = min(self.fill_ins_per_node, key=self.fill_ins_per_node.get)
+            self.elimination_order.append(self.eliminated_node)
+            self.G.remove_node(self.eliminated_node)
+
+            # Add the edges that are filled after elimination of that node
+            for fill_in in self.fill_ins_per_node[self.eliminated_node]:
+                self.G.add_edge(fill_in)
+
+        return self.elimination_order
+
+    def MinDegree(self):
+        '''
+        Elimination ordering by recursively favoring variables with fewer neighbors.
+        :return: list of nodes in elimination order in the form ['var1, 'var2', ...]
+        '''
+        # Create a list with the elimination order
+        self.elimination_order = []
+
+        # Keep eliminating nodes as long as there are nodes left
+        while len(self.G.nodes) > 0:
+            self.degrees_per_node = {}
+
+            # Count the number of degrees per node
+            for node in self.G.nodes:
+                self.degrees_per_node[node] = self.G.degree(node)
+
+            # Eliminate the node with the minimum degree
+            self.eliminated_node = min(self.degrees_per_node, key=self.degrees_per_node.get)
+            self.elimination_order.append(self.eliminated_node)
+            self.G.remove_node(self.eliminated_node)
+
+        return self.elimination_order
+
+    def VarElimination(self, X):
+        """
+        Sums out a set of variables X by using variable elimination
+
+        :param X: set of variables that is summed out
+        :return:
+        """
+        return X
+
+
+
+def test_BN(filename, heuristic, variablename1, variablename2, Q, e):
 
     # Create a BN reasoner (outer class)
     BNReasoner_ = BNReasoner(filename)
@@ -266,52 +312,35 @@ def test_BN(filename):
     # Create a BN (inner class)
     org_BayesNet_ = BNReasoner_.bn
 
-    # Get the structure of the BN
-    structure = org_BayesNet_.structure
-    print(f'structure: {structure}')
-    #
-    # Get a list of all variables in the BN
-    all_variables = org_BayesNet_.get_all_variables()
-    print(f'all_variables: {all_variables}')
-    #
-    # Get the interaction graph
-    interaction_graph = org_BayesNet_.get_interaction_graph()
-    print(f'interaction_graph: {interaction_graph}')
-    #
-    # Get a figure of the structure of the BN
-    drawed_structure = org_BayesNet_.draw_structure()
-    print(f'drawed_structure: {drawed_structure}')
-    #
-    # # Get the conditional probability tables of all the variables in the BN
-    # all_cpts = org_BayesNet_.get_all_cpts()
-    # print(f'all_cpts: {all_cpts}')
-    #
-    # # Get the conditional probability table of the variable 'dog-out' in the BN
-    # cpt_dog_out = org_BayesNet_.get_cpt('dog-out')
-    # print(f'cpt_dog_out: \n {cpt_dog_out}')
-
-    # # Sum-out the variable 'family-out' of the cdt of the variable 'dog-out' in the BN
-    # sum_out_family_out = BNReasoner_.SumOutVar('family-out', cpt_dog_out, all_variables)
-    # print(sum_out_family_out)
-    #
-    # # Maximize-out the variable 'max-out' of the cdt of the variable 'dog-out' in the BN
-    # max_out_family_out = BNReasoner_.MaxOutVar('family-out', cpt_dog_out, all_variables)
-    # print(max_out_family_out)
-    #
-    # # # Get the elimination order of the variables in the BN
-    # order = BNReasoner_.EliminationOrder(heuristic = "MinDegree")
-    # print(order)
-
-    # Q = ['Winter?', 'Rain?', 'Sprinkler?', 'WetGrass?', 'Slippery?']
-    Q = ['Wet Grass?']
-    e = {"Rain?": False, "Winter?": True}
-    pruned_BayesNet_ = BNReasoner_.network_pruning(Q, e)
+    # pruned_BayesNet_ = BNReasoner_.NetworkPruning(Q, e)
     # print(pruned_BayesNet_)
 
-    drawed_structure = org_BayesNet_.draw_structure()
-    print(f'drawed_structure: {drawed_structure}')
+    # Get the conditional probability table of variable 1 in the BN
+    cpt_variable1 = org_BayesNet_.get_cpt(variablename1)
+    print(f'cpt_{variablename1}: \n {cpt_variable1}')
+
+    # Sum-out a variable 2 of the cpt of variable 1 in the BN
+    sum_out_variable2 = BNReasoner_.SumOutVar(variablename2, cpt_variable1)
+    print(sum_out_variable2)
+
+    # Maximize-out variable 2 of the cpt of variable 1 in the BN
+    max_out_variable2 = BNReasoner_.MaxOutVar(variablename2, cpt_variable1)
+    print(max_out_variable2)
+
+    # # Check whether node set X and y are d-Separated by Z
+    # X = 'dog-out'
+    # Y = 'family-out'
+    # Z = 'hear-bark'
+    # d_separated = BNReasoner_.d_Seperation(X,Y,Z)
+    # print(d_separated)
+
+    # # Get the elimination order of the variables in the BN
+    order = BNReasoner_.EliminationOrder(heuristic)
+
+    print(order)
 
     return
 
-# BN_dog = test_BN('testing/dog_problem.BIFXML')
-BN_lecture = test_BN('testing/lecture_example.BIFXML')
+#BN_dog = test_BN('testing/dog_problem.BIFXML', heuristic = 'MinFill', variablename1 = 'dog-out', variablename2 = 'family-out', Q = [], e = {})
+BN_lecture_example = test_BN('testing/lecture_example.BIFXML', heuristic = 'MinFill', variablename1 = 'Rain?', variablename2 = 'Winter?', Q = ['Wet Grass?'], e = {"Rain?": False, "Winter?": True})
+
