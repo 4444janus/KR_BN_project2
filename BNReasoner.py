@@ -3,7 +3,7 @@ from BayesNet import BayesNet
 import networkx as nx
 import pandas as pd
 from itertools import combinations
-
+from copy import deepcopy
 class BNReasoner:
     def __init__(self, net: Union[str, BayesNet]):
         """
@@ -65,6 +65,10 @@ class BNReasoner:
     def NodePruning(self, Q, e):
         # node pruning
         # print("Node pruning:")
+        cpts = self.bn.get_all_cpts()
+
+
+
         pruning = True
         while pruning:
             pruning = False
@@ -93,8 +97,10 @@ class BNReasoner:
         #if evidence is given, prune the nodes
         if e:
             self.NodePruning(Q, e)
+            return
+        return
 
-    def d_Seperation(self, X, Y, Z) -> bool:
+    def d_Seperation(self, X, Y, Z: list) -> bool:
         """
         Given three sets of variables X, Y, and Z, determines whether X is d-separated of Y given Z.
 
@@ -103,13 +109,83 @@ class BNReasoner:
         :param Z: set of variables Z
         :return: True/False
         """
-        if nx.is_directed_acyclic_graph(self.G) == False:
-            print("The test only works on DAG's.")
-            return
+        # TODO: use pruning to make sure d-seperation can be decided in linear time
+        #list to keep track of where we have been
+        #remember all paths.
+        # check regels if blocked
+        # kijk wat verwijderd moet worden met pruning
+        copy_bn = deepcopy(self.bn)
+
+
+        change = True
+        while change == True:
+            change = False
+
+            # delete all edges outgoing from nodes in Z:
+            for node in Z:
+                # print(node)
+                naam = list(copy_bn.get_children(node))
+
+                for child in naam:
+                    # print(child)
+                    print("delete edge", type(node), type(child))
+                    # print(tuple((node, child)))
+                    copy_bn.del_edge(tuple((node, child)))
+                    change = True
+            # print(f"copy_bn: {copy_bn}")
+
+            # delete every leaf node that is not in X, Y or Z
+
+            for node in copy_bn.get_all_variables():
+                # print("node", node)
+                # print("X", X)
+                if copy_bn.get_children(node) == []:
+                    if node not in X and node not in Y and node not in Z:
+                        copy_bn.del_var(node)
+                        change = True
+
+
+        if copy_bn.get_children(X[0]) == Y[0] or copy_bn.get_children(Y[0]) == X[0]:
+            print(f"{X} and {Y} are not d-separated")
+            return False
 
         else:
-            d_seperated = nx.d_separated(self.G, X, Y, Z)
-            return d_seperated
+            print(f"{X} and {Y} are d-separated")
+            return True
+
+
+
+
+        all_paths = []
+        have_checked = []
+        # print(self.G.nodes)
+        # print(nx.has_path(self.G, X, Y))
+        # print(nx.has_path(self.G, Y, X))
+        # print(nx.has_path(self.G, X, Z))
+        # for variable in self.all_variables:
+        #     print(f"variable: {variable}")
+        #     if nx.has_path(self.G, variable, X) and nx.has_path(self.G, variable, Y) and nx.has_path(self.G, variable, Z):
+        #         print(f"variable: {variable}")
+        #         print("Blocked")
+        #         return False
+
+
+
+
+        #Deleting every leaf node 𝑊 ∉𝑋∪𝑌∪𝑍,
+        #Deleting every leaf node 𝑊 ∉𝑋∪𝑌∪𝑍,
+        #Performing both rules iteratively until they can’t be applied anymore.
+
+        # while can_be_applied == True:
+        #     can_be_applied = False
+        #     for variable in self.all_variables:
+        #         if not self.bn.get_children(variable):
+        #             if variable not in set(X) and variable not in set(Y) and variable not in set(Z):
+        #                 # delete leaf node and check if new leaf nodes are created
+        #                 print("Delete leaf node", variable)
+        #                 self.bn.del_var(variable)
+        #                 can_be_applied = True
+
 
     def Independence(self):
         """
@@ -120,6 +196,11 @@ class BNReasoner:
         :param Z: set of variables Z
         :return: True/False
         """
+        if self.d_Seperation(X, Y, Z):
+            return True
+
+
+
         return
 
     def SumOutVar(self, X, cpt):
@@ -316,31 +397,31 @@ def test_BN(filename, heuristic, variablename1, variablename2, Q, e):
     # print(pruned_BayesNet_)
 
     # Get the conditional probability table of variable 1 in the BN
-    cpt_variable1 = org_BayesNet_.get_cpt(variablename1)
-    print(f'cpt_{variablename1}: \n {cpt_variable1}')
+    # cpt_variable1 = org_BayesNet_.get_cpt(variablename1)
+    # print(f'cpt_{variablename1}: \n {cpt_variable1}')
 
     # Sum-out a variable 2 of the cpt of variable 1 in the BN
-    sum_out_variable2 = BNReasoner_.SumOutVar(variablename2, cpt_variable1)
-    print(sum_out_variable2)
+    # sum_out_variable2 = BNReasoner_.SumOutVar(variablename2, cpt_variable1)
+    # print(sum_out_variable2)
 
     # Maximize-out variable 2 of the cpt of variable 1 in the BN
-    max_out_variable2 = BNReasoner_.MaxOutVar(variablename2, cpt_variable1)
-    print(max_out_variable2)
+    # max_out_variable2 = BNReasoner_.MaxOutVar(variablename2, cpt_variable1)
+    # print(max_out_variable2)
 
-    # # Check whether node set X and y are d-Separated by Z
-    # X = 'dog-out'
-    # Y = 'family-out'
-    # Z = 'hear-bark'
-    # d_separated = BNReasoner_.d_Seperation(X,Y,Z)
-    # print(d_separated)
+    # Check whether node set X and y are d-Separated by Z
+    X = ['bowel-problem']
+    Z = ['family-out']
+    Y = ['hear-bark']
+    d_separated = BNReasoner_.d_Seperation(X,Y,Z)
+    print(d_separated)
 
     # # Get the elimination order of the variables in the BN
     order = BNReasoner_.EliminationOrder(heuristic)
 
     print(order)
-
+    org_BayesNet_.draw_structure()
     return
 
-#BN_dog = test_BN('testing/dog_problem.BIFXML', heuristic = 'MinFill', variablename1 = 'dog-out', variablename2 = 'family-out', Q = [], e = {})
-BN_lecture_example = test_BN('testing/lecture_example.BIFXML', heuristic = 'MinFill', variablename1 = 'Rain?', variablename2 = 'Winter?', Q = ['Wet Grass?'], e = {"Rain?": False, "Winter?": True})
+BN_dog = test_BN('testing/dog_problem.BIFXML', heuristic = 'MinFill', variablename1 = 'dog-out', variablename2 = 'family-out', Q = [], e = {})
+# BN_lecture_example = test_BN('testing/lecture_example.BIFXML', heuristic = 'MinFill', variablename1 = 'Rain?', variablename2 = 'Winter?', Q = ['Wet Grass?'], e = {"Rain?": False, "Winter?": True})
 
